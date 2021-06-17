@@ -1,4 +1,5 @@
 import pandas as pd
+import datetime
 
 def load_file_utf8(path, file_name) :
     file = pd.read_csv('{0}/{1}.csv'.format(path, file_name), encoding='utf-8')
@@ -21,6 +22,15 @@ def tem_employee(df, path):
         df
     return df
 
+def arrange_department(df, date, path) :
+    order_df = load_file_utf8(path, '직제순서')
+    order_df['시점']=pd.to_datetime(order_df['시점'], format='%Y-%m-%d')
+    order_df=order_df[order_df['시점']==date]
+    df_merge = pd.merge(order_df, df, left_on='부서', right_on=df.index)
+    df_merge = df_merge.sort_values(by=['직제순서'])
+    df_merge=df_merge.drop(['시점', '직제순서'], axis=1)
+    return df_merge
+
 def main():
     path = 'C:/Users/user/Desktop/직원 현황 테스트'
     file = load_file_utf8(path, '210616_사원명부')
@@ -37,8 +47,11 @@ def main():
                  '전문사무직 나급', '전문사무직 다급', '파견5급', '총계']
     df = df[positions]
 
-    print(df)
-    df.to_csv("{0:s}/요약.csv".format(path), encoding="cp949")
+    date = datetime.datetime(2021, 1, 1)
+    df_arranged = arrange_department(df, date, path)
+
+    print(df_arranged)
+    df_arranged.to_csv("{0:s}/요약.csv".format(path), encoding="cp949")
 
 if __name__ == '__main__' :
     main()
