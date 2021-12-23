@@ -1,5 +1,7 @@
 from pathlib import Path
 import pandas as pd
+from datetime import datetime
+from dataclasses import dataclass
 
 class idProvider:
 
@@ -11,6 +13,8 @@ class idProvider:
         id = self.df.loc[con]['사번']
         if len(id) == 1 : 
             id = id.iat[0]
+        else :
+            id = None
         return id
 
 
@@ -224,14 +228,14 @@ class Leave:
         print(f'휴직처리 {firstDic}')
         return self.firstDic
 
-class commander:
+class Commander:
 
     def __init__(self, firstDic, orderDic):
         self.orderDic = orderDic
         self.commandDic = {
             '부서이동' : Update_status(firstDic, orderDic),
             '승급' : Update_status(firstDic, orderDic),
-            '입사' : Update_status(firstDic, orderDic),
+            '입사' : Join(firstDic, orderDic),
             '퇴직' : Quit_job(firstDic, orderDic),
             '휴직' : Leave(firstDic, orderDic)
         }
@@ -241,10 +245,111 @@ class commander:
         print(f'발령 접수되었음 {orderAttribution}')
         return self.commandDic[orderAttribution].command()
 
+class SetOfCommanders(Commander):
+
+    def __init__(self, firstDic, orderDics):
+        self.firstDic = firstDic
+        self.orderDics = orderDics
+
+    def operation(self):
+        for orderDic in self.orderDics:
+            self.firstDic = Commander(self.firstDic, orderDic).operation()
+        return self.firstDic
+
+@dataclass
+class Dataclass:
+    id : int
+    name : str
+    birth : datetime
+    team : str
+    position : str
+    positionDate : datetime
+    leader : str
+    joinDate : datetime
+    quitDate : datetime
+    kindOfContract : str
+    currentState : str
+    teamLeader : str
+
+class DataclassTransformer():
+    def __init__(self, dics):
+        self.dics = dics
+
+    def get_team_leader(self, dic):
+        team = dic.get('부서')
+        df = pd.DataFrame(self.dics.values())
+        con = df.loc[:, '부서'] == team
+        teamDf = df.loc[con]
+        con2 = teamDf.loc[:, '직책'].isna()
+        teamLeader = teamDf.loc[~con2].loc[:, '사원'].iat[0]
+        return teamLeader
+        
+    def transform(self, dic):
+        dataclass = Dataclass(
+            dic['사번'],
+            dic['사원'],
+            dic['생년월일'],
+            dic['부서'],
+            dic['직급'],
+            dic['현직급근무일'],
+            dic['직책'],
+            dic['입사일'] ,
+            dic['퇴사일'],
+            dic['사원구분'],
+            dic['상태'],
+            self.get_team_leader(dic)
+        )
+        return dataclass
+
+class Tracker:
+
+    trackSpace = {}
+
+    def set_very_first_trackSpace(self, veryFirstDate):
+        ids = self.firstDic.keys()
+        for id in ids:
+            self.trackSpace[id] = []
+            temp = {}
+            temp[veryFirstDate] = self.firstDic.get(id)
+            self.trackSpace[id].append(temp)
+
+    def __init__(self, veryFirstDate, firstDic, orderDics):
+        self.firstDic = firstDic
+        self.afterDic = None 
+        self.orderDics = orderDics
+        self.set_very_first_trackSpace(veryFirstDate)
+
+    def get_different_data(self, id):
+        if not self.trackSpace.get(id):
+            return None
+        beforeDataclass = self.trackSpace.get(id)[-1]
+        afterDataclass = self.afterDic.get(id)
+        if not beforeDataclass :
+            return afterDataclass
+        bool = beforeDataclass == afterDataclass
+        if bool == False:
+            return afterDataclass
+        return None
+    
+    def update(self):
+        for orderDic in self.orderDics:
+            id = orderDic.get('사번')
+            self.afterDic = Commander(self.firstDic, orderDic).operation()
+            updateThing = self.get_different_data(id)
+            if not updateThing:
+                temp = {}
+                temp[orderDic.get('발령일')] = updateThing
+                if self.trackSpace.get(id):
+                    self.trackSpace[id].append(temp)
+                else :
+                    self.trackSpace[id] = []
+                    self.trackSpace[id].append(temp)
+        return self.trackSpace
+
+
+
 
 if __name__ == '__main__':
-
-    from datetime import datetime
 
     dirPath = Path.home().joinpath('Desktop', '직원현황작업폴더', '202109071632')
     fileName = '20210914_110909_사원명부.csv'
@@ -255,38 +360,21 @@ if __name__ == '__main__':
     path2 = dirPath2 / fileName2
     orderDf = pd.read_csv(path2, encoding='utf-8')
 
-    id = idProvider(firstDf).get_id('장수웅')
-    print('='*50)
-    print(id)
-
     firstDf = ListPreprocessor(firstDf).operation()
     lt = ListTransformer(firstDf)
-    firstDic = lt.transferDict()
-    print('='*50)
-    print(f'firstDic : {firstDic[id]}')
+    firstDic = lt.transferDict()    # get firstDic
     
-    start = datetime(2021,5,1)
+    start = datetime(2021,11,1)
     
     orderDf = OrderPreprocessor(orderDf).operation()
     orderDf = OrderFilter(orderDf).filter(start)
-    orderDic = orderTransformer(orderDf).transferDict()
+    orderDic = orderTransformer(orderDf).transferDict()     # get orderDic
 
-    orderDf_ = pd.DataFrame(orderDic)
-    con = orderDf_.loc[:, '사원'] == '김동준'
-    orderDf__ = orderDf_.loc[con]
-    print('='*50)
-    print(f'orderDic :\n {orderDf__}')
-    print('='*50)
-    print(orderDic[3])
+    firstDate = datetime(2021,1,1)
+    track = Tracker(firstDate , firstDic, orderDic).update()
 
-    attri = orderCategorizer().get_attribution('퇴직(희망퇴직)')
-    print('='*50)
-    print(attri)
-
-    result = commander(firstDic, orderDic[3]).operation()
-    print('='*50)
-    print(result[orderDic[3]['사번']])
-    df = pd.DataFrame(result.values())
-    con = df.loc[:, '사원'] == '장수웅'
-    print('='*50)
-    print(df.loc[con])
+    order = orderDic[1]
+    id = order.get('사번')
+    name = order.get('사원')
+    print(f'{name} : {track[id]}')
+    print(pd.DataFrame(data = order.values()))
